@@ -218,15 +218,31 @@ async function attachWithDrop(files, composer) {
   const baseline = attachmentSnapshot(files);
   const transfer = createTransfer(files);
   const target = composer.closest("form") || composer;
-  for (const type of ["dragenter", "dragover", "drop"]) {
-    target.dispatchEvent(new DragEvent(type, {
+  const dispatchDragEvent = (eventTarget, type) => {
+    eventTarget.dispatchEvent(new DragEvent(type, {
       bubbles: true,
       cancelable: true,
       composed: true,
       dataTransfer: transfer
     }));
+  };
+
+  try {
+    for (const type of ["dragenter", "dragover", "drop"]) dispatchDragEvent(target, type);
+    return await waitForAttachments(files, baseline, 3000);
+  } finally {
+    for (const eventTarget of [target, document.body, document.documentElement]) {
+      if (!eventTarget) continue;
+      dispatchDragEvent(eventTarget, "dragleave");
+      dispatchDragEvent(eventTarget, "dragend");
+    }
+    document.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "Escape",
+      code: "Escape",
+      bubbles: true,
+      cancelable: true
+    }));
   }
-  return waitForAttachments(files, baseline, 3000);
 }
 
 async function attachWithPaste(files, composer) {
@@ -324,6 +340,9 @@ async function consumeHandoff() {
         const files = await attachMarkdown(pendingHandoff, editable);
         insertText(editable, createImportText(files.length));
         await chrome.storage.local.remove("pendingHandoff");
+        const currentUrl = new URL(location.href);
+        currentUrl.searchParams.delete("ai-chat-bridge");
+        history.replaceState(history.state, "", currentUrl);
         toast(`已確認附加 ${files.length} 個 Markdown 檔，請確認後送出`);
         return;
       }

@@ -43,6 +43,67 @@ async function resolveShareLink(url) {
   }
 }
 
+function destinationTabScore(tab, destination) {
+  try {
+    const url = new URL(tab.url || "");
+    const expectedHost = destination === "claude" ? "claude.ai" : "chatgpt.com";
+    if (url.hostname !== expectedHost || url.pathname.includes("/share/")) return 0;
+    if (destination === "claude") {
+      if (url.pathname.includes("/chat/")) return 2;
+      return url.pathname === "/" || url.pathname === "/new" ? 1 : 0;
+    }
+    if (url.pathname.includes("/c/")) return 2;
+    return url.pathname === "/" ? 1 : 0;
+  } catch (_) {
+    return 0;
+  }
+}
+
+async function findExistingConversation(destination) {
+  const urlPattern = destination === "claude"
+    ? "https://claude.ai/*"
+    : "https://chatgpt.com/*";
+  const tabs = await chrome.tabs.query({ url: urlPattern });
+  return tabs
+    .filter((tab) => tab.id && destinationTabScore(tab, destination) > 0)
+    .sort((left, right) => {
+      const conversationDifference = destinationTabScore(right, destination) - destinationTabScore(left, destination);
+      if (conversationDifference) return conversationDifference;
+      const activeDifference = Number(right.active) - Number(left.active);
+      if (activeDifference) return activeDifference;
+      return (right.lastAccessed || 0) - (left.lastAccessed || 0);
+    })[0] || null;
+}
+
+function handoffUrl(url) {
+  const target = new URL(url);
+  target.searchParams.set("ai-chat-bridge", "1");
+  return target.toString();
+}
+
+async function openHandoffDestination(destination) {
+  const existing = await findExistingConversation(destination);
+  if (existing) {
+    const url = handoffUrl(existing.url);
+    if (url === existing.url) {
+      await chrome.tabs.update(existing.id, { active: true });
+      await chrome.tabs.reload(existing.id);
+    } else {
+      await chrome.tabs.update(existing.id, { active: true, url });
+    }
+    if (existing.windowId != null) {
+      await chrome.windows.update(existing.windowId, { focused: true }).catch(() => {});
+    }
+    return { reused: true, tabId: existing.id };
+  }
+
+  const url = destination === "claude"
+    ? "https://claude.ai/new?ai-chat-bridge=1"
+    : "https://chatgpt.com/?ai-chat-bridge=1";
+  const tab = await chrome.tabs.create({ url, active: true });
+  return { reused: false, tabId: tab.id };
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "RESOLVE_SHARE_LINK") {
     resolveShareLink(message.url)
@@ -52,12 +113,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === "OPEN_HANDOFF") {
-    chrome.storage.local.set({ pendingHandoff: message.payload }).then(() => {
-      const url = message.destination === "claude"
-        ? "https://claude.ai/new?ai-chat-bridge=1"
-        : "https://chatgpt.com/?ai-chat-bridge=1";
-      return chrome.tabs.create({ url, active: true });
-    }).then(() => sendResponse({ ok: true }))
+    chrome.storage.local.set({ pendingHandoff: message.payload })
+      .then(() => openHandoffDestination(message.destination))
+      .then((result) => sendResponse({ ok: true, ...result }))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
