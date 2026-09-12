@@ -99,31 +99,123 @@ function createTransfer(files) {
 
 function fileInputAcceptsMarkdown(input) {
   const accept = (input.accept || "").toLowerCase();
-  return !accept || accept.includes("*") || accept.includes("text") || accept.includes(".md") || accept.includes(".txt");
+  return !accept || accept.split(",").some((value) => {
+    const type = value.trim();
+    return type === "*" || type === "*/*" || type === "text/*" ||
+      type === "application/*" || type === "text/plain" ||
+      type === "text/markdown" || type === ".md" || type === ".txt";
+  });
+}
+
+function isVisible(element) {
+  const rect = element.getBoundingClientRect();
+  const style = getComputedStyle(element);
+  return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+}
+
+function attachmentButton() {
+  const candidates = Array.from(document.querySelectorAll("button, [role='button']"));
+  const labelPattern = /新增檔案|加入檔案|附加|附件|add files|add content|attach|upload/i;
+  return candidates.find((element) => {
+    if (element.id === "ai-chat-bridge-button" || !isVisible(element)) return false;
+    const label = [
+      element.getAttribute("aria-label"),
+      element.getAttribute("title"),
+      element.getAttribute("data-testid"),
+      element.textContent
+    ].filter(Boolean).join(" ");
+    return labelPattern.test(label);
+  }) || null;
+}
+
+function attachmentInputs() {
+  return Array.from(document.querySelectorAll('input[type="file"]'))
+    .filter((input) => !input.disabled && fileInputAcceptsMarkdown(input))
+    .sort((left, right) => {
+      const score = (input) => /upload|file|attach/i.test([
+        input.id,
+        input.name,
+        input.getAttribute("data-testid"),
+        input.getAttribute("aria-label")
+      ].filter(Boolean).join(" ")) ? 1 : 0;
+      return score(right) - score(left);
+    });
+}
+
+async function revealAttachmentInputs() {
+  let inputs = attachmentInputs();
+  if (inputs.length) return inputs;
+
+  const button = attachmentButton();
+  if (button && button.getAttribute("aria-expanded") !== "true") {
+    button.click();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+  }
+  inputs = attachmentInputs();
+  return inputs;
+}
+
+function attachmentSnapshot(files) {
+  const bodyText = document.body && document.body.innerText || "";
+  const matchedNames = files.filter((file) => bodyText.includes(file.name)).length;
+  const markers = document.querySelectorAll([
+    '[data-testid*="attachment" i]',
+    '[data-testid*="file-thumbnail" i]',
+    '[data-testid*="file-preview" i]',
+    '[class*="attachment" i]',
+    '[class*="file-chip" i]',
+    'button[aria-label*="remove file" i]',
+    'button[aria-label*="移除檔案" i]',
+    'button[aria-label*="刪除檔案" i]'
+  ].join(",")).length;
+  return { matchedNames, markers };
+}
+
+async function waitForAttachments(files, baseline, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const current = attachmentSnapshot(files);
+    if (current.matchedNames === files.length || current.markers >= baseline.markers + files.length) return true;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  return false;
+}
+
+async function dispatchFilesToInput(input, files) {
+  const baseline = attachmentSnapshot(files);
+  input.files = createTransfer(files).files;
+  input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+  return waitForAttachments(files, baseline, 6000);
 }
 
 async function attachWithFileInput(files) {
-  const inputs = Array.from(document.querySelectorAll('input[type="file"]'))
-    .filter((input) => !input.disabled && fileInputAcceptsMarkdown(input));
+  const inputs = await revealAttachmentInputs();
   if (!inputs.length) return false;
 
-  const input = inputs.find((candidate) => candidate.multiple) || inputs[0];
-  if (input.multiple || files.length === 1) {
-    input.files = createTransfer(files).files;
-    input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
-    return true;
-  }
+  for (const input of inputs) {
+    try {
+      if (input.multiple || files.length === 1) {
+        if (await dispatchFilesToInput(input, files)) return true;
+        continue;
+      }
 
-  for (const file of files) {
-    input.files = createTransfer([file]).files;
-    input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
-    await new Promise((resolve) => setTimeout(resolve, 300));
+      let complete = true;
+      for (const file of files) {
+        if (!await dispatchFilesToInput(input, [file])) {
+          complete = false;
+          break;
+        }
+      }
+      if (complete) return true;
+    } catch (_) {}
   }
-  return true;
+  return false;
 }
 
 async function attachWithDrop(files, composer) {
   if (!composer) return false;
+  const baseline = attachmentSnapshot(files);
   const transfer = createTransfer(files);
   const target = composer.closest("form") || composer;
   for (const type of ["dragenter", "dragover", "drop"]) {
@@ -134,15 +226,28 @@ async function attachWithDrop(files, composer) {
       dataTransfer: transfer
     }));
   }
-  await new Promise((resolve) => setTimeout(resolve, 800));
-  return true;
+  return waitForAttachments(files, baseline, 3000);
+}
+
+async function attachWithPaste(files, composer) {
+  if (!composer) return false;
+  const baseline = attachmentSnapshot(files);
+  const transfer = createTransfer(files);
+  composer.dispatchEvent(new ClipboardEvent("paste", {
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+    clipboardData: transfer
+  }));
+  return waitForAttachments(files, baseline, 3000);
 }
 
 async function attachMarkdown(payload, preferredComposer) {
   const files = buildMarkdownFiles(payload);
   let attached = await attachWithFileInput(files);
   if (!attached) attached = await attachWithDrop(files, preferredComposer || findComposer());
-  if (!attached) throw new Error("找不到可附加 Markdown 檔案的位置");
+  if (!attached) attached = await attachWithPaste(files, preferredComposer || findComposer());
+  if (!attached) throw new Error("Markdown 附件沒有成功加入；對話內容仍已保留，請重新整理後再試");
   return files;
 }
 
@@ -172,7 +277,10 @@ async function sendToOtherPlatform() {
     if (!response || !response.ok) throw new Error(response && response.error || "無法開啟目標平台");
     toast("已送出");
   } catch (error) {
-    toast(error.message, "error");
+    const message = /找不到可匯出的對話內容/.test(error.message)
+      ? "目前沒有對話內容可傳送"
+      : error.message;
+    toast(message, "error");
   }
 }
 
@@ -209,18 +317,22 @@ async function consumeHandoff() {
   const { pendingHandoff } = await chrome.storage.local.get("pendingHandoff");
   if (!pendingHandoff || !pendingHandoff.transcript) return;
 
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    const editable = findComposer();
-    if (editable) {
-      const files = await attachMarkdown(pendingHandoff, editable);
-      insertText(editable, createImportText(files.length));
-      await chrome.storage.local.remove("pendingHandoff");
-      toast(`已附加 ${files.length} 個 Markdown 檔，請確認後送出`);
-      return;
+  try {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const editable = findComposer();
+      if (editable) {
+        const files = await attachMarkdown(pendingHandoff, editable);
+        insertText(editable, createImportText(files.length));
+        await chrome.storage.local.remove("pendingHandoff");
+        toast(`已確認附加 ${files.length} 個 Markdown 檔，請確認後送出`);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
     }
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    toast("找不到訊息輸入框", "error");
+  } catch (error) {
+    toast(error.message, "error");
   }
-  toast("找不到訊息輸入框", "error");
 }
 
 document.addEventListener("paste", async (event) => {
@@ -243,7 +355,7 @@ document.addEventListener("paste", async (event) => {
       ? createImportText(files.length)
       : pastedText.replace(shareUrl, createImportText(files.length));
     insertText(editable, replacement);
-    toast(`已附加 ${files.length} 個 Markdown 檔`);
+    toast(`已確認附加 ${files.length} 個 Markdown 檔`);
   } catch (error) {
     insertText(editable, pastedText);
     toast(`讀取失敗：${error.message}`, "error");
