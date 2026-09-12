@@ -1,6 +1,6 @@
 {
   "name": "ai-chat-bridge",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "private": true,
   "description": "Chrome extension for transferring conversations between ChatGPT and Claude",
   "scripts": {

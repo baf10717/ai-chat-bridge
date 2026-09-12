@@ -75,10 +75,46 @@ function createImportText(fileCount) {
 function findComposer() {
   const selectors = "textarea, [contenteditable='true'], [contenteditable='plaintext-only'], [role='textbox']";
   const candidates = Array.from(document.querySelectorAll(selectors));
-  return candidates.find((element) => {
+  const visible = candidates.filter((element) => {
     const rect = element.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0;
-  }) || candidates[0] || null;
+  });
+  visible.sort((left, right) => {
+    const leftRect = left.getBoundingClientRect();
+    const rightRect = right.getBoundingClientRect();
+    return rightRect.bottom - leftRect.bottom || rightRect.width - leftRect.width;
+  });
+  return visible[0] || candidates[0] || null;
+}
+
+function findComposerFrame(editable) {
+  if (!editable) return null;
+  const editableRect = editable.getBoundingClientRect();
+  const preferred = editable.closest([
+    'form[data-type="unified-composer"]',
+    '[data-testid*="composer" i]',
+    'fieldset',
+    'form'
+  ].join(","));
+
+  const isSuitable = (element) => {
+    if (!element) return false;
+    const rect = element.getBoundingClientRect();
+    return rect.width >= Math.max(280, editableRect.width * 0.8) &&
+      rect.height >= editableRect.height &&
+      rect.height <= Math.min(600, window.innerHeight * 0.65) &&
+      rect.bottom <= window.innerHeight + 24;
+  };
+  if (isSuitable(preferred)) return preferred;
+
+  let candidate = editable.parentElement;
+  let fallback = editable;
+  for (let depth = 0; candidate && depth < 9; depth += 1, candidate = candidate.parentElement) {
+    if (!isSuitable(candidate)) continue;
+    fallback = candidate;
+    if (candidate.querySelectorAll("button, [role='button']").length >= 2) return candidate;
+  }
+  return fallback;
 }
 
 function buildMarkdownFiles(payload) {
@@ -300,17 +336,59 @@ async function sendToOtherPlatform() {
   }
 }
 
+let bridgeButton = null;
+let observedComposerFrame = null;
+let positionFrame = 0;
+const composerResizeObserver = new ResizeObserver(() => scheduleBridgeButtonPosition());
+
+function positionBridgeButton() {
+  positionFrame = 0;
+  if (!bridgeButton) return;
+  const editable = findComposer();
+  const frame = findComposerFrame(editable);
+  if (!frame) {
+    bridgeButton.style.visibility = "hidden";
+    return;
+  }
+
+  if (observedComposerFrame !== frame) {
+    composerResizeObserver.disconnect();
+    composerResizeObserver.observe(frame);
+    if (editable !== frame) composerResizeObserver.observe(editable);
+    observedComposerFrame = frame;
+  }
+
+  const composerRect = frame.getBoundingClientRect();
+  const buttonRect = bridgeButton.getBoundingClientRect();
+  const gap = 8;
+  const left = Math.min(
+    window.innerWidth - buttonRect.width - gap,
+    Math.max(gap, composerRect.right - buttonRect.width)
+  );
+  const top = Math.max(gap, composerRect.top - buttonRect.height - gap);
+  bridgeButton.style.left = `${Math.round(left)}px`;
+  bridgeButton.style.top = `${Math.round(top)}px`;
+  bridgeButton.style.visibility = "visible";
+}
+
+function scheduleBridgeButtonPosition() {
+  if (positionFrame) return;
+  positionFrame = requestAnimationFrame(positionBridgeButton);
+}
+
 function addBridgeButton() {
   if (location.pathname.includes("/share/") || document.getElementById("ai-chat-bridge-button")) return;
   const button = document.createElement("button");
+  bridgeButton = button;
   button.id = "ai-chat-bridge-button";
   button.type = "button";
   button.textContent = currentPlatform === "chatgpt" ? "傳到 Claude" : "傳到 ChatGPT";
   button.title = "將目前完整對話轉成 Markdown 並傳到另一平台";
   Object.assign(button.style, {
     position: "fixed",
-    right: "18px",
-    bottom: "96px",
+    left: "0",
+    top: "0",
+    visibility: "hidden",
     zIndex: "2147483646",
     border: "1px solid rgba(127,127,127,.35)",
     borderRadius: "9px",
@@ -326,6 +404,7 @@ function addBridgeButton() {
   button.style.opacity = ".86";
   button.addEventListener("click", sendToOtherPlatform);
   document.documentElement.appendChild(button);
+  scheduleBridgeButtonPosition();
 }
 
 async function consumeHandoff() {
@@ -398,4 +477,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 addBridgeButton();
+window.addEventListener("resize", scheduleBridgeButtonPosition);
+window.addEventListener("scroll", scheduleBridgeButtonPosition, true);
+new MutationObserver(scheduleBridgeButtonPosition).observe(document.body, {
+  childList: true,
+  subtree: true
+});
 consumeHandoff();
