@@ -6,7 +6,7 @@
 
 - 在 Claude 貼上 ChatGPT 分享連結，自動讀取並附加成 Markdown 檔。
 - 在 ChatGPT 貼上 Claude 分享連結，執行相同流程。
-- 從 Chrome 工具列開啟 Extension，將目前對話傳到另一平台。
+- 從輸入框上方的按鈕或 Chrome 工具列開啟 Extension，將目前對話傳到另一平台。
 - 長對話會按回合自動拆成多個 Markdown 檔。
 - 支援沒有分享連結的 Claude Incognito Chat。
 - 對話只存放於瀏覽器的短期本機暫存，不經過第三方伺服器。
@@ -26,7 +26,7 @@
 
 ### 傳送目前對話
 
-在 ChatGPT 或 Claude 頁面按 Chrome 工具列中的 Extension 圖示，再按「傳送目前對話」。另一個平台開啟後，Markdown 檔會附加到輸入框；確認後再自行送出。
+在 ChatGPT 或 Claude 頁面按輸入框上方的「傳到 Claude／ChatGPT」，也可以從 Chrome 工具列中的 Extension 圖示操作。另一個平台開啟後，Markdown 檔會附加到輸入框；確認後再自行送出。
 
 ## 權限
 

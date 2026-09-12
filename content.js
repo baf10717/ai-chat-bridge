@@ -176,6 +176,34 @@ async function sendToOtherPlatform() {
   }
 }
 
+function addBridgeButton() {
+  if (location.pathname.includes("/share/") || document.getElementById("ai-chat-bridge-button")) return;
+  const button = document.createElement("button");
+  button.id = "ai-chat-bridge-button";
+  button.type = "button";
+  button.textContent = currentPlatform === "chatgpt" ? "傳到 Claude" : "傳到 ChatGPT";
+  button.title = "將目前完整對話轉成 Markdown 並傳到另一平台";
+  Object.assign(button.style, {
+    position: "fixed",
+    right: "18px",
+    bottom: "96px",
+    zIndex: "2147483646",
+    border: "1px solid rgba(127,127,127,.35)",
+    borderRadius: "9px",
+    padding: "9px 13px",
+    background: "#fff",
+    color: "#222",
+    font: "600 13px system-ui, sans-serif",
+    cursor: "pointer",
+    boxShadow: "0 3px 12px rgba(0,0,0,.16)"
+  });
+  button.addEventListener("mouseenter", () => { button.style.opacity = "1"; });
+  button.addEventListener("mouseleave", () => { button.style.opacity = ".86"; });
+  button.style.opacity = ".86";
+  button.addEventListener("click", sendToOtherPlatform);
+  document.documentElement.appendChild(button);
+}
+
 async function consumeHandoff() {
   if (!new URL(location.href).searchParams.has("ai-chat-bridge")) return;
   const { pendingHandoff } = await chrome.storage.local.get("pendingHandoff");
@@ -238,4 +266,5 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+addBridgeButton();
 consumeHandoff();
