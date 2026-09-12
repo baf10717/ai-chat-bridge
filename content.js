@@ -87,7 +87,7 @@ function buildMarkdownFiles(payload) {
     platform: payload.platform || Bridge.platformFromUrl(payload.sourceUrl) || "ai"
   };
   return Bridge.createMarkdownFiles(payload.transcript, metadata).map((descriptor) =>
-    new File([descriptor.content], descriptor.name, { type: "text/markdown;charset=utf-8" })
+    new File([descriptor.content], descriptor.name, { type: "text/markdown" })
   );
 }
 
