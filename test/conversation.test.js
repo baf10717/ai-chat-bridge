@@ -30,3 +30,14 @@ test("formats a Markdown transcript", () => {
 test("rejects empty conversations", () => {
   assert.throws(() => Bridge.formatTranscript([], {}), /找不到/);
 });
+
+test("decodes ChatGPT flattened route data", () => {
+  const result = Bridge.decodeFlatData([
+    { _1: 2 },
+    "loaderData",
+    { _3: 4 },
+    "title",
+    "Demo"
+  ]);
+  assert.deepEqual(result, { loaderData: { title: "Demo" } });
+});
