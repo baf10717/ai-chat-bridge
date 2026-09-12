@@ -1,7 +1,5 @@
 "use strict";
 
-const pendingResolvers = new Map();
-
 function waitForTabComplete(tabId, timeoutMs) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {

@@ -11,7 +11,7 @@ function toast(message, kind) {
     Object.assign(node.style, {
       position: "fixed",
       right: "20px",
-      bottom: "72px",
+      top: "20px",
       zIndex: "2147483647",
       maxWidth: "360px",
       padding: "10px 14px",
@@ -31,7 +31,7 @@ function toast(message, kind) {
 
 function getEditableTarget(eventTarget) {
   if (!(eventTarget instanceof Element)) return null;
-  return eventTarget.closest("textarea, input, [contenteditable='true']");
+  return eventTarget.closest("textarea, input, [contenteditable='true'], [contenteditable='plaintext-only'], [role='textbox']");
 }
 
 function setNativeValue(element, value) {
@@ -66,8 +66,84 @@ function insertText(element, text) {
   element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
 }
 
-function createImportText(transcript) {
-  return `以下是從另一個 AI 匯入的完整對話，請先讀取並以此作為後續對話的上下文。\n\n${transcript}\n\n請確認已讀取，接著等待我的問題。`;
+function createImportText(fileCount) {
+  return fileCount > 1
+    ? `請讀取附加的 ${fileCount} 個 Markdown 對話紀錄檔，依檔名順序作為後續對話的上下文。`
+    : "請讀取附加的 Markdown 對話紀錄檔，作為後續對話的上下文。";
+}
+
+function findComposer() {
+  const selectors = "textarea, [contenteditable='true'], [contenteditable='plaintext-only'], [role='textbox']";
+  const candidates = Array.from(document.querySelectorAll(selectors));
+  return candidates.find((element) => {
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  }) || candidates[0] || null;
+}
+
+function buildMarkdownFiles(payload) {
+  const metadata = payload.conversation || {
+    title: payload.title || "Conversation",
+    platform: payload.platform || Bridge.platformFromUrl(payload.sourceUrl) || "ai"
+  };
+  return Bridge.createMarkdownFiles(payload.transcript, metadata).map((descriptor) =>
+    new File([descriptor.content], descriptor.name, { type: "text/markdown;charset=utf-8" })
+  );
+}
+
+function createTransfer(files) {
+  const transfer = new DataTransfer();
+  for (const file of files) transfer.items.add(file);
+  return transfer;
+}
+
+function fileInputAcceptsMarkdown(input) {
+  const accept = (input.accept || "").toLowerCase();
+  return !accept || accept.includes("*") || accept.includes("text") || accept.includes(".md") || accept.includes(".txt");
+}
+
+async function attachWithFileInput(files) {
+  const inputs = Array.from(document.querySelectorAll('input[type="file"]'))
+    .filter((input) => !input.disabled && fileInputAcceptsMarkdown(input));
+  if (!inputs.length) return false;
+
+  const input = inputs.find((candidate) => candidate.multiple) || inputs[0];
+  if (input.multiple || files.length === 1) {
+    input.files = createTransfer(files).files;
+    input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    return true;
+  }
+
+  for (const file of files) {
+    input.files = createTransfer([file]).files;
+    input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  return true;
+}
+
+async function attachWithDrop(files, composer) {
+  if (!composer) return false;
+  const transfer = createTransfer(files);
+  const target = composer.closest("form") || composer;
+  for (const type of ["dragenter", "dragover", "drop"]) {
+    target.dispatchEvent(new DragEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      dataTransfer: transfer
+    }));
+  }
+  await new Promise((resolve) => setTimeout(resolve, 800));
+  return true;
+}
+
+async function attachMarkdown(payload, preferredComposer) {
+  const files = buildMarkdownFiles(payload);
+  let attached = await attachWithFileInput(files);
+  if (!attached) attached = await attachWithDrop(files, preferredComposer || findComposer());
+  if (!attached) throw new Error("找不到可附加 Markdown 檔案的位置");
+  return files;
 }
 
 async function extractCurrent() {
@@ -88,6 +164,7 @@ async function sendToOtherPlatform() {
       destination,
       payload: {
         transcript: extracted.transcript,
+        conversation: extracted.conversation,
         sourceUrl: location.href,
         createdAt: Date.now()
       }
@@ -99,42 +176,18 @@ async function sendToOtherPlatform() {
   }
 }
 
-function addBridgeButton() {
-  if (location.pathname.includes("/share/") || document.getElementById("ai-chat-bridge-button")) return;
-  const button = document.createElement("button");
-  button.id = "ai-chat-bridge-button";
-  button.type = "button";
-  button.textContent = currentPlatform === "chatgpt" ? "傳到 Claude" : "傳到 ChatGPT";
-  button.title = "擷取目前完整對話並在另一平台開啟";
-  Object.assign(button.style, {
-    position: "fixed",
-    right: "18px",
-    bottom: "18px",
-    zIndex: "2147483646",
-    border: "1px solid rgba(127,127,127,.35)",
-    borderRadius: "9px",
-    padding: "9px 13px",
-    background: "#fff",
-    color: "#222",
-    font: "600 13px system-ui, sans-serif",
-    cursor: "pointer",
-    boxShadow: "0 3px 12px rgba(0,0,0,.16)"
-  });
-  button.addEventListener("click", sendToOtherPlatform);
-  document.documentElement.appendChild(button);
-}
-
 async function consumeHandoff() {
   if (!new URL(location.href).searchParams.has("ai-chat-bridge")) return;
   const { pendingHandoff } = await chrome.storage.local.get("pendingHandoff");
   if (!pendingHandoff || !pendingHandoff.transcript) return;
 
   for (let attempt = 0; attempt < 40; attempt += 1) {
-    const editable = document.querySelector("textarea, [contenteditable='true']");
+    const editable = findComposer();
     if (editable) {
-      insertText(editable, createImportText(pendingHandoff.transcript));
+      const files = await attachMarkdown(pendingHandoff, editable);
+      insertText(editable, createImportText(files.length));
       await chrome.storage.local.remove("pendingHandoff");
-      toast("對話已匯入，請確認後送出");
+      toast(`已附加 ${files.length} 個 Markdown 檔，請確認後送出`);
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -157,9 +210,12 @@ document.addEventListener("paste", async (event) => {
   try {
     const response = await chrome.runtime.sendMessage({ type: "RESOLVE_SHARE_LINK", url: shareUrl });
     if (!response || !response.ok) throw new Error(response && response.error || "無法讀取分享連結");
-    const replacement = pastedText.replace(shareUrl, createImportText(response.transcript));
+    const files = await attachMarkdown(response, editable);
+    const replacement = pastedText.trim() === shareUrl
+      ? createImportText(files.length)
+      : pastedText.replace(shareUrl, createImportText(files.length));
     insertText(editable, replacement);
-    toast("對話已匯入");
+    toast(`已附加 ${files.length} 個 Markdown 檔`);
   } catch (error) {
     insertText(editable, pastedText);
     toast(`讀取失敗：${error.message}`, "error");
@@ -182,5 +238,4 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-addBridgeButton();
 consumeHandoff();

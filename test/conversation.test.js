@@ -41,3 +41,21 @@ test("decodes ChatGPT flattened route data", () => {
   ]);
   assert.deepEqual(result, { loaderData: { title: "Demo" } });
 });
+
+test("creates one Markdown file for a normal conversation", () => {
+  const files = Bridge.createMarkdownFiles("# Demo\n\n## User\n\nHello", {
+    title: "Demo / Test",
+    platform: "chatgpt"
+  }, 10000);
+  assert.equal(files.length, 1);
+  assert.equal(files[0].name, "chatgpt-Demo-Test.md");
+});
+
+test("splits a long Markdown conversation on turn boundaries", () => {
+  const turn = "## User\n\n" + "A".repeat(7000);
+  const transcript = [turn, turn, turn].join("\n\n---\n\n");
+  const files = Bridge.createMarkdownFiles(transcript, { title: "Long", platform: "claude" }, 10000);
+  assert.equal(files.length, 3);
+  assert.match(files[0].name, /part-01-of-03\.md$/);
+  assert.match(files[2].content, /Part 3 of 3/);
+});

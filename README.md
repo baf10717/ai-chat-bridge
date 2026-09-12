@@ -4,9 +4,10 @@
 
 ## 功能
 
-- 在 Claude 貼上 ChatGPT 分享連結，自動讀取並替換成完整對話。
+- 在 Claude 貼上 ChatGPT 分享連結，自動讀取並附加成 Markdown 檔。
 - 在 ChatGPT 貼上 Claude 分享連結，執行相同流程。
-- 在目前對話按「傳到 Claude」或「傳到 ChatGPT」，直接開啟另一平台並匯入內容。
+- 從 Chrome 工具列開啟 Extension，將目前對話傳到另一平台。
+- 長對話會按回合自動拆成多個 Markdown 檔。
 - 支援沒有分享連結的 Claude Incognito Chat。
 - 對話只存放於瀏覽器的短期本機暫存，不經過第三方伺服器。
 
@@ -21,11 +22,11 @@
 
 ### 貼上分享連結
 
-直接把 ChatGPT 分享連結貼進 Claude，或把 Claude 分享連結貼進 ChatGPT。Extension 會在背景開啟分享頁、讀取對話、關閉背景分頁，並把連結替換成 Markdown 對話。
+直接把 ChatGPT 分享連結貼進 Claude，或把 Claude 分享連結貼進 ChatGPT。Extension 會在背景讀取分享頁，並將完整對話轉成 Markdown 檔附加到目前訊息。
 
 ### 傳送目前對話
 
-在 ChatGPT 或 Claude 頁面右下角按傳送按鈕。另一個平台開啟後，對話會放入輸入框；確認內容後再自行送出。
+在 ChatGPT 或 Claude 頁面按 Chrome 工具列中的 Extension 圖示，再按「傳送目前對話」。另一個平台開啟後，Markdown 檔會附加到輸入框；確認後再自行送出。
 
 ## 權限
 
@@ -36,7 +37,7 @@
 ## 已知限制
 
 - ChatGPT 或 Claude 調整頁面結構後，擷取 selector 可能需要更新。
-- 極長對話可能超過平台單次輸入長度。
+- 極長對話會拆成多個檔案，但仍受目標 AI 的上下文容量限制。
 - 分享連結仍需具備原平台允許的存取權限。
 
 ## 開發
