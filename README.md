@@ -12,7 +12,7 @@
 
 ## 安裝
 
-1. 下載 Release 中的 `ai-chat-bridge.zip` 並解壓縮。
+1. 在 GitHub 按 `Code` → `Download ZIP`，下載後解壓縮。
 2. 在 Chrome 開啟 `chrome://extensions`。
 3. 開啟右上角「開發人員模式」。
 4. 按「載入未封裝項目」，選擇解壓縮後的資料夾。
