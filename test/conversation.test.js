@@ -59,3 +59,26 @@ test("splits a long Markdown conversation on turn boundaries", () => {
   assert.match(files[0].name, /part-01-of-03\.md$/);
   assert.match(files[2].content, /Part 3 of 3/);
 });
+
+test("extracts a Claude snapshot ID", () => {
+  assert.equal(
+    Bridge.claudeSnapshotIdFromUrl("https://claude.ai/share/f592fd2b-3abd-4157-ba1b-853f9926626d"),
+    "f592fd2b-3abd-4157-ba1b-853f9926626d"
+  );
+  assert.equal(Bridge.claudeSnapshotIdFromUrl("https://claude.ai/chat/demo"), null);
+});
+
+test("extracts structured Claude snapshot messages", () => {
+  const conversation = Bridge.extractClaudeSnapshot({
+    snapshot_name: "Shared demo",
+    chat_messages: [
+      { sender: "human", text: "First question" },
+      { sender: "assistant", content: [{ type: "text", text: "First answer" }] }
+    ]
+  });
+  assert.equal(conversation.title, "Shared demo");
+  assert.deepEqual(conversation.messages, [
+    { role: "user", text: "First question" },
+    { role: "assistant", text: "First answer" }
+  ]);
+});

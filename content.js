@@ -304,6 +304,26 @@ async function attachMarkdown(payload, preferredComposer) {
 }
 
 async function extractCurrent() {
+  const snapshotId = Bridge.claudeSnapshotIdFromUrl(location.href);
+  if (snapshotId) {
+    const response = await fetch(
+      `https://claude.ai/api/chat_snapshots/${snapshotId}?rendering_mode=messages&render_all_tools=true`,
+      { credentials: "include", headers: { Accept: "application/json" } }
+    );
+    if (!response.ok) throw new Error(`Claude 分享資料讀取失敗（HTTP ${response.status}）`);
+    let snapshot;
+    try {
+      snapshot = await response.json();
+    } catch (_) {
+      throw new Error("Claude 分享資料沒有回傳有效的 JSON");
+    }
+    const conversation = Bridge.extractClaudeSnapshot(snapshot);
+    return {
+      conversation,
+      transcript: Bridge.formatTranscript(conversation.messages, conversation)
+    };
+  }
+
   const conversation = Bridge.extractConversation(document, location.href);
   return {
     conversation,
@@ -462,12 +482,9 @@ document.addEventListener("paste", async (event) => {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "EXTRACT_CONVERSATION") {
-    try {
-      const result = extractCurrent();
-      Promise.resolve(result).then((value) => sendResponse({ ok: true, ...value }));
-    } catch (error) {
-      sendResponse({ ok: false, error: error.message });
-    }
+    extractCurrent()
+      .then((value) => sendResponse({ ok: true, ...value }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
   if (message.type === "SEND_TO_OTHER_PLATFORM") {

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI Chat Bridge",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "在 ChatGPT 與 Claude 之間直接轉移完整對話。",
   "permissions": ["storage", "tabs"],
   "host_permissions": [
