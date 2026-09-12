@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "AI Chat Bridge",
+  "version": "0.1.0",
+  "description": "在 ChatGPT 與 Claude 之間直接轉移完整對話。",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://claude.ai/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://claude.ai/*"
+      ],
+      "js": ["lib/conversation.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "AI Chat Bridge",
+    "default_popup": "popup.html"
+  }
+}
